@@ -1,16 +1,4 @@
-# requirements.txt
-"""
-streamlit
-pandas
-numpy
-matplotlib
-seaborn
-scipy
-scikit-learn
-plotly
-"""
 
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
