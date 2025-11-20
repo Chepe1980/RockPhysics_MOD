@@ -154,6 +154,10 @@ class RockPhysicsModeler:
             results_df['NPHI'] = depth_data['NPHI'].values
         if 'SW' in depth_data.columns:
             results_df['SW'] = depth_data['SW'].values
+        if 'GR' in depth_data.columns:
+            results_df['GR'] = depth_data['GR'].values
+        if 'VSH' in depth_data.columns:
+            results_df['VSH'] = depth_data['VSH'].values
         
         self.depth_track_results = results_df
         return results_df
@@ -724,6 +728,356 @@ def main():
                     with col4:
                         st.metric("Depth Points", len(results_df))
                     
+                    # Depth Profile Comparison
+                    st.subheader("Depth Profile Comparison")
+                    
+                    fig_depth = make_subplots(
+                        rows=1, cols=3,
+                        subplot_titles=['Vp vs Depth', 'Vs vs Depth', 'RHOB vs Depth'],
+                        shared_yaxes=True,
+                        horizontal_spacing=0.05
+                    )
+                    
+                    # Vp vs Depth
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vp_measured'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Measured Vp',
+                            line=dict(color='blue', width=2),
+                            hovertemplate="<b>Measured Vp</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=1
+                    )
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vp_modeled'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Modeled Vp',
+                            line=dict(color='red', width=2, dash='dash'),
+                            hovertemplate="<b>Modeled Vp</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Vs vs Depth
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vs_measured'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Measured Vs',
+                            line=dict(color='green', width=2),
+                            hovertemplate="<b>Measured Vs</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=2
+                    )
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vs_modeled'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Modeled Vs',
+                            line=dict(color='orange', width=2, dash='dash'),
+                            hovertemplate="<b>Modeled Vs</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=2
+                    )
+                    
+                    # RHOB vs Depth
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['RHOB_measured'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Measured RHOB',
+                            line=dict(color='purple', width=2),
+                            hovertemplate="<b>Measured RHOB</b>: %{x:.2f} g/cc<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=3
+                    )
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['RHOB_modeled'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Modeled RHOB',
+                            line=dict(color='brown', width=2, dash='dash'),
+                            hovertemplate="<b>Modeled RHOB</b>: %{x:.2f} g/cc<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=3
+                    )
+                    
+                    # Update axes
+                    fig_depth.update_xaxes(title_text="Vp (m/s)", row=1, col=1)
+                    fig_depth.update_xaxes(title_text="Vs (m/s)", row=1, col=2)
+                    fig_depth.update_xaxes(title_text="RHOB (g/cc)", row=1, col=3)
+                    fig_depth.update_yaxes(title_text="Depth", row=1, col=1)
+                    
+                    fig_depth.update_layout(
+                        height=600,
+                        template="plotly_white",
+                        showlegend=True,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        title="Rock Physics Modeling: Measured vs Modeled Properties vs Depth"
+                    )
+                    
+                    st.plotly_chart(fig_depth, use_container_width=True)
+                    
+                    # Cross-plots for depth range
+                    if all(col in results_df.columns for col in ['Vp_measured', 'Vs_measured', 'RHOB_measured']):
+                        st.subheader("Cross-Plot Analysis")
+                        
+                        # Color coding option
+                        color_options = []
+                        if 'SW' in results_df.columns:
+                            color_options.append('SW')
+                        if 'VSH' in results_df.columns:
+                            color_options.append('VSH')
+                        if 'GR' in results_df.columns:
+                            color_options.append('GR')
+                        color_options.extend(['Depth', 'NPHI'])
+                        
+                        color_option = st.selectbox(
+                            "Color points by:",
+                            options=color_options,
+                            index=0,
+                            help="Choose which parameter to use for color coding the scatter plots",
+                            key="rp_color_option"
+                        )
+                        
+                        fig_cross = make_subplots(
+                            rows=2, cols=2,
+                            subplot_titles=[
+                                f'Vp: Measured vs Modeled (R² = {r2_vp:.4f})',
+                                f'Vs: Measured vs Modeled (R² = {r2_vs:.4f})', 
+                                f'RHOB: Measured vs Modeled (R² = {r2_rhob:.4f})',
+                                'Vp/Vs Ratio: Measured vs Modeled'
+                            ],
+                            specs=[[{}, {}], [{}, {}]]
+                        )
+                        
+                        # Determine color data and title
+                        color_data = results_df[color_option]
+                        color_title = color_option
+                        
+                        # Vp scatter plot
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=results_df['Vp_measured'], 
+                                y=results_df['Vp_modeled'],
+                                mode='markers',
+                                marker=dict(
+                                    size=6,
+                                    color=color_data,
+                                    colorscale='Viridis',
+                                    showscale=True,
+                                    colorbar=dict(title=color_title, x=0.45, y=0.5)
+                                ),
+                                name='Vp',
+                                hovertemplate=(
+                                    f"<b>Measured Vp</b>: %{{x:.0f}} m/s<br>"
+                                    f"<b>Modeled Vp</b>: %{{y:.0f}} m/s<br>"
+                                    f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                    f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                                ),
+                                customdata=results_df[['Depth']]
+                            ),
+                            row=1, col=1
+                        )
+                        
+                        # 1:1 line for Vp
+                        max_vp = max(results_df['Vp_measured'].max(), results_df['Vp_modeled'].max())
+                        min_vp = min(results_df['Vp_measured'].min(), results_df['Vp_modeled'].min())
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=[min_vp, max_vp], 
+                                y=[min_vp, max_vp],
+                                mode='lines', 
+                                name='1:1 Line', 
+                                line=dict(color='red', dash='dash', width=2),
+                                showlegend=False
+                            ),
+                            row=1, col=1
+                        )
+                        
+                        # Vs scatter plot
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=results_df['Vs_measured'], 
+                                y=results_df['Vs_modeled'],
+                                mode='markers',
+                                marker=dict(
+                                    size=6,
+                                    color=color_data,
+                                    colorscale='Plasma',
+                                    showscale=False
+                                ),
+                                name='Vs',
+                                hovertemplate=(
+                                    f"<b>Measured Vs</b>: %{{x:.0f}} m/s<br>"
+                                    f"<b>Modeled Vs</b>: %{{y:.0f}} m/s<br>"
+                                    f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                    f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                                ),
+                                customdata=results_df[['Depth']]
+                            ),
+                            row=1, col=2
+                        )
+                        
+                        # 1:1 line for Vs
+                        max_vs = max(results_df['Vs_measured'].max(), results_df['Vs_modeled'].max())
+                        min_vs = min(results_df['Vs_measured'].min(), results_df['Vs_modeled'].min())
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=[min_vs, max_vs], 
+                                y=[min_vs, max_vs],
+                                mode='lines', 
+                                name='1:1 Line', 
+                                line=dict(color='red', dash='dash', width=2),
+                                showlegend=False
+                            ),
+                            row=1, col=2
+                        )
+                        
+                        # RHOB scatter plot
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=results_df['RHOB_measured'], 
+                                y=results_df['RHOB_modeled'],
+                                mode='markers',
+                                marker=dict(
+                                    size=6,
+                                    color=color_data,
+                                    colorscale='Rainbow',
+                                    showscale=False
+                                ),
+                                name='RHOB',
+                                hovertemplate=(
+                                    f"<b>Measured RHOB</b>: %{{x:.2f}} g/cc<br>"
+                                    f"<b>Modeled RHOB</b>: %{{y:.2f}} g/cc<br>"
+                                    f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                    f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                                ),
+                                customdata=results_df[['Depth']]
+                            ),
+                            row=2, col=1
+                        )
+                        
+                        # 1:1 line for RHOB
+                        max_rhob = max(results_df['RHOB_measured'].max(), results_df['RHOB_modeled'].max())
+                        min_rhob = min(results_df['RHOB_measured'].min(), results_df['RHOB_modeled'].min())
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=[min_rhob, max_rhob], 
+                                y=[min_rhob, max_rhob],
+                                mode='lines', 
+                                name='1:1 Line', 
+                                line=dict(color='red', dash='dash', width=2),
+                                showlegend=False
+                            ),
+                            row=2, col=1
+                        )
+                        
+                        # Vp/Vs ratio scatter plot
+                        vp_vs_measured = results_df['Vp_measured'] / results_df['Vs_measured']
+                        vp_vs_modeled = results_df['Vp_modeled'] / results_df['Vs_modeled']
+                        r2_vp_vs = calculate_r2(vp_vs_measured, vp_vs_modeled)
+                        
+                        # Update subplot title for Vp/Vs
+                        fig_cross.layout.annotations[3].update(text=f'Vp/Vs Ratio: Measured vs Modeled (R² = {r2_vp_vs:.4f})')
+                        
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=vp_vs_measured, 
+                                y=vp_vs_modeled,
+                                mode='markers',
+                                marker=dict(
+                                    size=6,
+                                    color=color_data,
+                                    colorscale='Hot',
+                                    showscale=False
+                                ),
+                                name='Vp/Vs',
+                                hovertemplate=(
+                                    f"<b>Measured Vp/Vs</b>: %{{x:.2f}}<br>"
+                                    f"<b>Modeled Vp/Vs</b>: %{{y:.2f}}<br>"
+                                    f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                    f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                                ),
+                                customdata=results_df[['Depth']]
+                            ),
+                            row=2, col=2
+                        )
+                        
+                        # 1:1 line for Vp/Vs
+                        max_vp_vs = max(vp_vs_measured.max(), vp_vs_modeled.max())
+                        min_vp_vs = min(vp_vs_measured.min(), vp_vs_modeled.min())
+                        fig_cross.add_trace(
+                            go.Scatter(
+                                x=[min_vp_vs, max_vp_vs], 
+                                y=[min_vp_vs, max_vp_vs],
+                                mode='lines', 
+                                name='1:1 Line', 
+                                line=dict(color='red', dash='dash', width=2),
+                                showlegend=False
+                            ),
+                            row=2, col=2
+                        )
+                        
+                        fig_cross.update_layout(
+                            height=700,
+                            template="plotly_white",
+                            showlegend=False,
+                            title=f"Rock Physics Modeling Scatter Plots (Color coded by {color_title})"
+                        )
+                        
+                        st.plotly_chart(fig_cross, use_container_width=True)
+                    
+                    # Property changes vs depth
+                    st.subheader("Property Changes vs Depth")
+                    
+                    results_df['Vp_change'] = (results_df['Vp_modeled'] - results_df['Vp_measured']) / results_df['Vp_measured'] * 100
+                    results_df['Vs_change'] = (results_df['Vs_modeled'] - results_df['Vs_measured']) / results_df['Vs_measured'] * 100
+                    results_df['RHOB_change'] = (results_df['RHOB_modeled'] - results_df['RHOB_measured']) / results_df['RHOB_measured'] * 100
+                    
+                    fig_changes = make_subplots(
+                        rows=1, cols=3,
+                        subplot_titles=['Vp Change (%)', 'Vs Change (%)', 'RHOB Change (%)'],
+                        shared_yaxes=True
+                    )
+                    
+                    fig_changes.add_trace(
+                        go.Scatter(x=results_df['Vp_change'], y=results_df['Depth'], 
+                                  mode='lines+markers', name='Vp Change', line=dict(color='blue')),
+                        row=1, col=1
+                    )
+                    fig_changes.add_trace(
+                        go.Scatter(x=results_df['Vs_change'], y=results_df['Depth'], 
+                                  mode='lines+markers', name='Vs Change', line=dict(color='green')),
+                        row=1, col=2
+                    )
+                    fig_changes.add_trace(
+                        go.Scatter(x=results_df['RHOB_change'], y=results_df['Depth'], 
+                                  mode='lines+markers', name='RHOB Change', line=dict(color='purple')),
+                        row=1, col=3
+                    )
+                    
+                    fig_changes.update_yaxes(title_text="Depth", row=1, col=1)
+                    fig_changes.update_xaxes(title_text="Vp Change (%)", row=1, col=1)
+                    fig_changes.update_xaxes(title_text="Vs Change (%)", row=1, col=2)
+                    fig_changes.update_xaxes(title_text="RHOB Change (%)", row=1, col=3)
+                    
+                    fig_changes.update_layout(
+                        height=500,
+                        template="plotly_white",
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_changes, use_container_width=True)
+                    
                     # Export results
                     st.subheader("Export Modeling Results")
                     csv = results_df.to_csv(index=False)
@@ -755,7 +1109,7 @@ def main():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("Brine → Gas", use_container_width=True):
+            if st.button("Brine → Gas", use_container_width=True, key="fs_brine_gas"):
                 st.session_state.fs_orig_sw = 1.0
                 st.session_state.fs_orig_fluid = "brine"
                 st.session_state.fs_new_sw = 0.0
@@ -764,7 +1118,7 @@ def main():
                 st.success("Brine to Gas: Largest Vp decrease expected")
 
         with col2:
-            if st.button("Oil → Brine", use_container_width=True):
+            if st.button("Oil → Brine", use_container_width=True, key="fs_oil_brine"):
                 st.session_state.fs_orig_sw = 0.2
                 st.session_state.fs_orig_fluid = "oil"
                 st.session_state.fs_new_sw = 1.0
@@ -773,7 +1127,7 @@ def main():
                 st.success("Oil to Brine: Moderate Vp increase expected")
 
         with col3:
-            if st.button("Gas → Brine", use_container_width=True):
+            if st.button("Gas → Brine", use_container_width=True, key="fs_gas_brine"):
                 st.session_state.fs_orig_sw = 0.0
                 st.session_state.fs_orig_fluid = "gas"
                 st.session_state.fs_new_sw = 1.0
@@ -918,6 +1272,9 @@ def main():
                             # Add current SW if available
                             if 'SW' in row:
                                 result_point['SW_current'] = row['SW']
+                            # Add GR if available
+                            if 'GR' in row:
+                                result_point['GR'] = row['GR']
                                 
                             results.append(result_point)
                         except Exception as e:
@@ -983,6 +1340,367 @@ def main():
                         st.markdown(f"<p style='color: {rhob_color}; font-weight: bold;'>"
                                   f"{'Excellent' if r2_rhob > 0.9 else 'Good' if r2_rhob > 0.7 else 'Reasonable' if r2_rhob > 0.5 else 'Poor'}"
                                   f"</p>", unsafe_allow_html=True)
+                    
+                    # DEPTH PROFILE COMPARISON PLOTS
+                    st.subheader("Depth Profile Comparison")
+                    
+                    # Create depth profile plots
+                    fig_depth = make_subplots(
+                        rows=1, cols=3,
+                        subplot_titles=['Vp vs Depth', 'Vs vs Depth', 'RHOB vs Depth'],
+                        shared_yaxes=True,
+                        horizontal_spacing=0.05
+                    )
+                    
+                    # Vp vs Depth
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vp_measured'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Measured Vp',
+                            line=dict(color='blue', width=2),
+                            hovertemplate="<b>Measured Vp</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=1
+                    )
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vp_modeled'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Modeled Vp',
+                            line=dict(color='red', width=2, dash='dash'),
+                            hovertemplate="<b>Modeled Vp</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Vs vs Depth
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vs_measured'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Measured Vs',
+                            line=dict(color='green', width=2),
+                            hovertemplate="<b>Measured Vs</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=2
+                    )
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['Vs_modeled'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Modeled Vs',
+                            line=dict(color='orange', width=2, dash='dash'),
+                            hovertemplate="<b>Modeled Vs</b>: %{x:.0f} m/s<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=2
+                    )
+                    
+                    # RHOB vs Depth
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['RHOB_measured'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Measured RHOB',
+                            line=dict(color='purple', width=2),
+                            hovertemplate="<b>Measured RHOB</b>: %{x:.2f} g/cc<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=3
+                    )
+                    fig_depth.add_trace(
+                        go.Scatter(
+                            x=results_df['RHOB_modeled'], 
+                            y=results_df['Depth'],
+                            mode='lines',
+                            name='Modeled RHOB',
+                            line=dict(color='brown', width=2, dash='dash'),
+                            hovertemplate="<b>Modeled RHOB</b>: %{x:.2f} g/cc<br><b>Depth</b>: %{y:.1f}<extra></extra>"
+                        ),
+                        row=1, col=3
+                    )
+                    
+                    # Update axes
+                    fig_depth.update_xaxes(title_text="Vp (m/s)", row=1, col=1)
+                    fig_depth.update_xaxes(title_text="Vs (m/s)", row=1, col=2)
+                    fig_depth.update_xaxes(title_text="RHOB (g/cc)", row=1, col=3)
+                    fig_depth.update_yaxes(title_text="Depth", row=1, col=1)
+                    
+                    fig_depth.update_layout(
+                        height=600,
+                        template="plotly_white",
+                        showlegend=True,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        title="Fluid Substitution: Measured vs Modeled Properties vs Depth"
+                    )
+                    
+                    st.plotly_chart(fig_depth, use_container_width=True)
+                    
+                    # INTERACTIVE SCATTER PLOTS WITH R² AND COLOR CODING
+                    st.subheader("Interactive Scatter Plots with Color Coding")
+                    
+                    # Color coding options
+                    color_options = []
+                    if 'SW_current' in results_df.columns:
+                        color_options.append('SW_current')
+                    if 'VSH' in results_df.columns:
+                        color_options.append('VSH')
+                    if 'GR' in results_df.columns:
+                        color_options.append('GR')
+                    color_options.extend(['Depth', 'NPHI'])
+                    
+                    color_option = st.selectbox(
+                        "Color points by:",
+                        options=color_options,
+                        index=0,
+                        help="Choose which parameter to use for color coding the scatter plots",
+                        key="fs_color_option"
+                    )
+                    
+                    # Create scatter plots
+                    fig_scatter = make_subplots(
+                        rows=2, cols=2,
+                        subplot_titles=[
+                            f'Vp: Measured vs Modeled (R² = {r2_vp:.4f})',
+                            f'Vs: Measured vs Modeled (R² = {r2_vs:.4f})', 
+                            f'RHOB: Measured vs Modeled (R² = {r2_rhob:.4f})',
+                            'Vp/Vs Ratio: Measured vs Modeled'
+                        ],
+                        specs=[[{}, {}], [{}, {}]]
+                    )
+                    
+                    # Determine color data and title
+                    color_data = results_df[color_option]
+                    color_title = color_option
+                    
+                    # Vp scatter plot
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=results_df['Vp_measured'], 
+                            y=results_df['Vp_modeled'],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=color_data,
+                                colorscale='Viridis',
+                                showscale=True,
+                                colorbar=dict(title=color_title, x=0.45, y=0.5)
+                            ),
+                            name='Vp',
+                            hovertemplate=(
+                                f"<b>Measured Vp</b>: %{{x:.0f}} m/s<br>"
+                                f"<b>Modeled Vp</b>: %{{y:.0f}} m/s<br>"
+                                f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                            ),
+                            customdata=results_df[['Depth']]
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # 1:1 line for Vp
+                    max_vp = max(results_df['Vp_measured'].max(), results_df['Vp_modeled'].max())
+                    min_vp = min(results_df['Vp_measured'].min(), results_df['Vp_modeled'].min())
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=[min_vp, max_vp], 
+                            y=[min_vp, max_vp],
+                            mode='lines', 
+                            name='1:1 Line', 
+                            line=dict(color='red', dash='dash', width=2),
+                            showlegend=False
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Vs scatter plot
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=results_df['Vs_measured'], 
+                            y=results_df['Vs_modeled'],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=color_data,
+                                colorscale='Plasma',
+                                showscale=False
+                            ),
+                            name='Vs',
+                            hovertemplate=(
+                                f"<b>Measured Vs</b>: %{{x:.0f}} m/s<br>"
+                                f"<b>Modeled Vs</b>: %{{y:.0f}} m/s<br>"
+                                f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                            ),
+                            customdata=results_df[['Depth']]
+                        ),
+                        row=1, col=2
+                    )
+                    
+                    # 1:1 line for Vs
+                    max_vs = max(results_df['Vs_measured'].max(), results_df['Vs_modeled'].max())
+                    min_vs = min(results_df['Vs_measured'].min(), results_df['Vs_modeled'].min())
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=[min_vs, max_vs], 
+                            y=[min_vs, max_vs],
+                            mode='lines', 
+                            name='1:1 Line', 
+                            line=dict(color='red', dash='dash', width=2),
+                            showlegend=False
+                        ),
+                        row=1, col=2
+                    )
+                    
+                    # RHOB scatter plot
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=results_df['RHOB_measured'], 
+                            y=results_df['RHOB_modeled'],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=color_data,
+                                colorscale='Rainbow',
+                                showscale=False
+                            ),
+                            name='RHOB',
+                            hovertemplate=(
+                                f"<b>Measured RHOB</b>: %{{x:.2f}} g/cc<br>"
+                                f"<b>Modeled RHOB</b>: %{{y:.2f}} g/cc<br>"
+                                f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                            ),
+                            customdata=results_df[['Depth']]
+                        ),
+                        row=2, col=1
+                    )
+                    
+                    # 1:1 line for RHOB
+                    max_rhob = max(results_df['RHOB_measured'].max(), results_df['RHOB_modeled'].max())
+                    min_rhob = min(results_df['RHOB_measured'].min(), results_df['RHOB_modeled'].min())
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=[min_rhob, max_rhob], 
+                            y=[min_rhob, max_rhob],
+                            mode='lines', 
+                            name='1:1 Line', 
+                            line=dict(color='red', dash='dash', width=2),
+                            showlegend=False
+                        ),
+                        row=2, col=1
+                    )
+                    
+                    # Vp/Vs ratio scatter plot
+                    vp_vs_measured = results_df['Vp_measured'] / results_df['Vs_measured']
+                    vp_vs_modeled = results_df['Vp_modeled'] / results_df['Vs_modeled']
+                    r2_vp_vs = calculate_r2(vp_vs_measured, vp_vs_modeled)
+                    
+                    # Update subplot title for Vp/Vs
+                    fig_scatter.layout.annotations[3].update(text=f'Vp/Vs Ratio: Measured vs Modeled (R² = {r2_vp_vs:.4f})')
+                    
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=vp_vs_measured, 
+                            y=vp_vs_modeled,
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=color_data,
+                                colorscale='Hot',
+                                showscale=False
+                            ),
+                            name='Vp/Vs',
+                            hovertemplate=(
+                                f"<b>Measured Vp/Vs</b>: %{{x:.2f}}<br>"
+                                f"<b>Modeled Vp/Vs</b>: %{{y:.2f}}<br>"
+                                f"<b>{color_title}</b>: %{{marker.color:.3f}}<br>"
+                                f"<b>Depth</b>: %{{customdata[0]:.1f}}<extra></extra>"
+                            ),
+                            customdata=results_df[['Depth']]
+                        ),
+                        row=2, col=2
+                    )
+                    
+                    # 1:1 line for Vp/Vs
+                    max_vp_vs = max(vp_vs_measured.max(), vp_vs_modeled.max())
+                    min_vp_vs = min(vp_vs_measured.min(), vp_vs_modeled.min())
+                    fig_scatter.add_trace(
+                        go.Scatter(
+                            x=[min_vp_vs, max_vp_vs], 
+                            y=[min_vp_vs, max_vp_vs],
+                            mode='lines', 
+                            name='1:1 Line', 
+                            line=dict(color='red', dash='dash', width=2),
+                            showlegend=False
+                        ),
+                        row=2, col=2
+                    )
+                    
+                    # Update axes labels
+                    fig_scatter.update_xaxes(title_text="Measured Vp (m/s)", row=1, col=1)
+                    fig_scatter.update_yaxes(title_text="Modeled Vp (m/s)", row=1, col=1)
+                    fig_scatter.update_xaxes(title_text="Measured Vs (m/s)", row=1, col=2)
+                    fig_scatter.update_yaxes(title_text="Modeled Vs (m/s)", row=1, col=2)
+                    fig_scatter.update_xaxes(title_text="Measured RHOB (g/cc)", row=2, col=1)
+                    fig_scatter.update_yaxes(title_text="Modeled RHOB (g/cc)", row=2, col=1)
+                    fig_scatter.update_xaxes(title_text="Measured Vp/Vs", row=2, col=2)
+                    fig_scatter.update_yaxes(title_text="Modeled Vp/Vs", row=2, col=2)
+                    
+                    fig_scatter.update_layout(
+                        height=700,
+                        template="plotly_white",
+                        showlegend=False,
+                        title=f"Fluid Substitution Scatter Plots (Color coded by {color_title})"
+                    )
+                    
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+                    
+                    # Property changes vs depth
+                    st.subheader("Property Changes vs Depth")
+                    
+                    results_df['Vp_change'] = (results_df['Vp_modeled'] - results_df['Vp_measured']) / results_df['Vp_measured'] * 100
+                    results_df['Vs_change'] = (results_df['Vs_modeled'] - results_df['Vs_measured']) / results_df['Vs_measured'] * 100
+                    results_df['RHOB_change'] = (results_df['RHOB_modeled'] - results_df['RHOB_measured']) / results_df['RHOB_measured'] * 100
+                    
+                    fig_changes = make_subplots(
+                        rows=1, cols=3,
+                        subplot_titles=['Vp Change (%)', 'Vs Change (%)', 'RHOB Change (%)'],
+                        shared_yaxes=True
+                    )
+                    
+                    fig_changes.add_trace(
+                        go.Scatter(x=results_df['Vp_change'], y=results_df['Depth'], 
+                                  mode='lines+markers', name='Vp Change', line=dict(color='blue')),
+                        row=1, col=1
+                    )
+                    fig_changes.add_trace(
+                        go.Scatter(x=results_df['Vs_change'], y=results_df['Depth'], 
+                                  mode='lines+markers', name='Vs Change', line=dict(color='green')),
+                        row=1, col=2
+                    )
+                    fig_changes.add_trace(
+                        go.Scatter(x=results_df['RHOB_change'], y=results_df['Depth'], 
+                                  mode='lines+markers', name='RHOB Change', line=dict(color='purple')),
+                        row=1, col=3
+                    )
+                    
+                    fig_changes.update_yaxes(title_text="Depth", row=1, col=1)
+                    fig_changes.update_xaxes(title_text="Vp Change (%)", row=1, col=1)
+                    fig_changes.update_xaxes(title_text="Vs Change (%)", row=1, col=2)
+                    fig_changes.update_xaxes(title_text="RHOB Change (%)", row=1, col=3)
+                    
+                    fig_changes.update_layout(
+                        height=500,
+                        template="plotly_white",
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_changes, use_container_width=True)
                     
                     # Export results
                     st.subheader("Export Results")
