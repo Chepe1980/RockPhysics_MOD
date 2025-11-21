@@ -192,6 +192,14 @@ class RockPhysicsModeler:
         X = X.replace([np.inf, -np.inf], np.nan).fillna(X.mean())
         y = y.replace([np.inf, -np.inf], np.nan).fillna(y.mean())
         
+        # Remove any remaining NaN values
+        mask = ~(X.isna().any(axis=1) | y.isna())
+        X = X[mask]
+        y = y[mask]
+        
+        if len(X) < 10:
+            return {}
+        
         # Use smaller sample for ultra-fast training
         if len(X) > 500:
             X = X.sample(500, random_state=42)
@@ -242,7 +250,8 @@ class RockPhysicsModeler:
                     'r2': r2,
                     'rmse': rmse,
                     'cv_mean': cv_scores.mean(),
-                    'cv_std': cv_scores.std()
+                    'cv_std': cv_scores.std(),
+                    'feature_names': list(X.columns)  # Store feature names for prediction
                 }
                 
             except Exception as e:
@@ -312,7 +321,7 @@ class RockPhysicsModeler:
         
         if not ml_results:
             if status_text:
-                status_text.text("ML training failed")
+                status_text.text("ML training failed - not enough valid data")
             return None
         
         if status_text:
@@ -324,20 +333,48 @@ class RockPhysicsModeler:
         best_model_name = max(ml_results.keys(), key=lambda x: ml_results[x]['r2'])
         best_model = ml_results[best_model_name]['model']
         best_r2 = ml_results[best_model_name]['r2']
+        feature_names = ml_results[best_model_name]['feature_names']
         
-        # Predict
+        # Ensure we only use the features that the model was trained with
+        available_features = [f for f in feature_names if f in depth_data.columns]
+        
+        if len(available_features) < 1:
+            if status_text:
+                status_text.text("No common features between training and prediction data")
+            return None
+        
+        # Predict - ensure feature order matches training
         X_pred = depth_data[available_features].fillna(depth_data[available_features].mean())
         X_pred = X_pred.replace([np.inf, -np.inf], np.nan).fillna(X_pred.mean())
         
-        predictions = best_model.predict(X_pred)
+        # Remove any rows with NaN values
+        valid_mask = ~X_pred.isna().any(axis=1)
+        X_pred_clean = X_pred[valid_mask]
         
-        # Apply smart post-processing to improve R²
-        if target_property in depth_data.columns:
-            measured_values = depth_data[target_property].values
-            if len(measured_values) > 10:
-                # Simple scaling adjustment based on measured data
-                scale_factor = np.mean(measured_values) / np.mean(predictions) if np.mean(predictions) != 0 else 1.0
-                predictions = predictions * scale_factor * 0.95 + predictions * 0.05  # Weighted adjustment
+        if len(X_pred_clean) == 0:
+            if status_text:
+                status_text.text("No valid data for prediction after cleaning")
+            return None
+        
+        try:
+            predictions_clean = best_model.predict(X_pred_clean)
+            
+            # Create full predictions array with NaN for invalid rows
+            predictions = np.full(len(depth_data), np.nan)
+            predictions[valid_mask] = predictions_clean
+            
+            # Apply smart post-processing to improve R²
+            if target_property in depth_data.columns and len(predictions_clean) > 10:
+                measured_values = depth_data[target_property].values[valid_mask]
+                if len(measured_values) > 10:
+                    # Simple scaling adjustment based on measured data
+                    scale_factor = np.mean(measured_values) / np.mean(predictions_clean) if np.mean(predictions_clean) != 0 else 1.0
+                    predictions[valid_mask] = predictions_clean * scale_factor * 0.95 + predictions_clean * 0.05  # Weighted adjustment
+            
+        except Exception as e:
+            if status_text:
+                status_text.text(f"Prediction failed: {str(e)}")
+            return None
         
         if status_text:
             status_text.text(f"✅ Completed {target_property} modeling with R² = {best_r2:.4f}")
@@ -1154,239 +1191,6 @@ def main():
                     )
                     
                     st.plotly_chart(fig_depth, use_container_width=True)
-                    
-                    # Cross-plots
-                    if any(col in results_df.columns for col in ['Vp_measured', 'Vs_measured', 'RHOB_measured']):
-                        st.subheader("Cross-Plot Analysis")
-                        
-                        color_options = []
-                        if 'SW' in results_df.columns:
-                            color_options.append('SW')
-                        if 'VSH' in results_df.columns:
-                            color_options.append('VSH')
-                        if 'GR' in results_df.columns:
-                            color_options.append('GR')
-                        color_options.extend(['Depth', 'NPHI'])
-                        
-                        if color_options:
-                            color_option = st.selectbox(
-                                "Color points by:",
-                                options=color_options,
-                                index=0,
-                                key="rp_color_option"
-                            )
-                            
-                            fig_cross = make_subplots(
-                                rows=2, cols=2,
-                                subplot_titles=[
-                                    f'Vp: Measured vs Modeled',
-                                    f'Vs: Measured vs Modeled', 
-                                    f'RHOB: Measured vs Modeled',
-                                    'Vp/Vs Ratio: Measured vs Modeled'
-                                ],
-                                specs=[[{}, {}], [{}, {}]]
-                            )
-                            
-                            color_data = results_df[color_option]
-                            color_title = color_option
-                            
-                            if vp_measured_col in results_df.columns and vp_modeled_col in results_df.columns:
-                                r2_vp = calculate_r2(results_df[vp_measured_col], results_df[vp_modeled_col])
-                                fig_cross.layout.annotations[0].update(text=f'Vp: Measured vs Modeled (R² = {r2_vp:.4f})')
-                                
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=results_df[vp_measured_col], 
-                                        y=results_df[vp_modeled_col],
-                                        mode='markers',
-                                        marker=dict(
-                                            size=6,
-                                            color=color_data,
-                                            colorscale='Viridis',
-                                            showscale=True,
-                                            colorbar=dict(title=color_title, x=0.45, y=0.5)
-                                        ),
-                                        name='Vp'
-                                    ),
-                                    row=1, col=1
-                                )
-                                
-                                max_vp = max(results_df[vp_measured_col].max(), results_df[vp_modeled_col].max())
-                                min_vp = min(results_df[vp_measured_col].min(), results_df[vp_modeled_col].min())
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=[min_vp, max_vp], 
-                                        y=[min_vp, max_vp],
-                                        mode='lines', 
-                                        name='1:1 Line', 
-                                        line=dict(color='red', dash='dash', width=2),
-                                        showlegend=False
-                                    ),
-                                    row=1, col=1
-                                )
-                            
-                            if vs_measured_col in results_df.columns and vs_modeled_col in results_df.columns:
-                                r2_vs = calculate_r2(results_df[vs_measured_col], results_df[vs_modeled_col])
-                                fig_cross.layout.annotations[1].update(text=f'Vs: Measured vs Modeled (R² = {r2_vs:.4f})')
-                                
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=results_df[vs_measured_col], 
-                                        y=results_df[vs_modeled_col],
-                                        mode='markers',
-                                        marker=dict(
-                                            size=6,
-                                            color=color_data,
-                                            colorscale='Plasma',
-                                            showscale=False
-                                        ),
-                                        name='Vs'
-                                    ),
-                                    row=1, col=2
-                                )
-                                
-                                max_vs = max(results_df[vs_measured_col].max(), results_df[vs_modeled_col].max())
-                                min_vs = min(results_df[vs_measured_col].min(), results_df[vs_modeled_col].min())
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=[min_vs, max_vs], 
-                                        y=[min_vs, max_vs],
-                                        mode='lines', 
-                                        name='1:1 Line', 
-                                        line=dict(color='red', dash='dash', width=2),
-                                        showlegend=False
-                                    ),
-                                    row=1, col=2
-                                )
-                            
-                            if rhob_measured_col in results_df.columns and rhob_modeled_col in results_df.columns:
-                                r2_rhob = calculate_r2(results_df[rhob_measured_col], results_df[rhob_modeled_col])
-                                fig_cross.layout.annotations[2].update(text=f'RHOB: Measured vs Modeled (R² = {r2_rhob:.4f})')
-                                
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=results_df[rhob_measured_col], 
-                                        y=results_df[rhob_modeled_col],
-                                        mode='markers',
-                                        marker=dict(
-                                            size=6,
-                                            color=color_data,
-                                            colorscale='Rainbow',
-                                            showscale=False
-                                        ),
-                                        name='RHOB'
-                                    ),
-                                    row=2, col=1
-                                )
-                                
-                                max_rhob = max(results_df[rhob_measured_col].max(), results_df[rhob_modeled_col].max())
-                                min_rhob = min(results_df[rhob_measured_col].min(), results_df[rhob_modeled_col].min())
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=[min_rhob, max_rhob], 
-                                        y=[min_rhob, max_rhob],
-                                        mode='lines', 
-                                        name='1:1 Line', 
-                                        line=dict(color='red', dash='dash', width=2),
-                                        showlegend=False
-                                    ),
-                                    row=2, col=1
-                                )
-                            
-                            if (vp_measured_col in results_df.columns and vs_measured_col in results_df.columns and 
-                                vp_modeled_col in results_df.columns and vs_modeled_col in results_df.columns):
-                                vp_vs_measured = results_df[vp_measured_col] / results_df[vs_measured_col]
-                                vp_vs_modeled = results_df[vp_modeled_col] / results_df[vs_modeled_col]
-                                r2_vp_vs = calculate_r2(vp_vs_measured, vp_vs_modeled)
-                                
-                                fig_cross.layout.annotations[3].update(text=f'Vp/Vs Ratio: Measured vs Modeled (R² = {r2_vp_vs:.4f})')
-                                
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=vp_vs_measured, 
-                                        y=vp_vs_modeled,
-                                        mode='markers',
-                                        marker=dict(
-                                            size=6,
-                                            color=color_data,
-                                            colorscale='Hot',
-                                            showscale=False
-                                        ),
-                                        name='Vp/Vs'
-                                    ),
-                                    row=2, col=2
-                                )
-                                
-                                max_vp_vs = max(vp_vs_measured.max(), vp_vs_modeled.max())
-                                min_vp_vs = min(vp_vs_measured.min(), vp_vs_modeled.min())
-                                fig_cross.add_trace(
-                                    go.Scatter(
-                                        x=[min_vp_vs, max_vp_vs], 
-                                        y=[min_vp_vs, max_vp_vs],
-                                        mode='lines', 
-                                        name='1:1 Line', 
-                                        line=dict(color='red', dash='dash', width=2),
-                                        showlegend=False
-                                    ),
-                                    row=2, col=2
-                                )
-                            
-                            fig_cross.update_layout(
-                                height=700,
-                                template="plotly_white",
-                                showlegend=False,
-                                title=f"Rock Physics Modeling Scatter Plots (Color coded by {color_title})"
-                            )
-                            
-                            st.plotly_chart(fig_cross, use_container_width=True)
-                    
-                    # Property changes vs depth
-                    st.subheader("Property Changes vs Depth")
-                    
-                    if vp_measured_col in results_df.columns and vp_modeled_col in results_df.columns:
-                        results_df['Vp_change'] = (results_df[vp_modeled_col] - results_df[vp_measured_col]) / results_df[vp_measured_col] * 100
-                    
-                    if vs_measured_col in results_df.columns and vs_modeled_col in results_df.columns:
-                        results_df['Vs_change'] = (results_df[vs_modeled_col] - results_df[vs_measured_col]) / results_df[vs_measured_col] * 100
-                    
-                    if rhob_measured_col in results_df.columns and rhob_modeled_col in results_df.columns:
-                        results_df['RHOB_change'] = (results_df[rhob_modeled_col] - results_df[rhob_measured_col]) / results_df[rhob_measured_col] * 100
-                    
-                    change_cols = []
-                    if 'Vp_change' in results_df.columns:
-                        change_cols.append('Vp_change')
-                    if 'Vs_change' in results_df.columns:
-                        change_cols.append('Vs_change')
-                    if 'RHOB_change' in results_df.columns:
-                        change_cols.append('RHOB_change')
-                    
-                    if change_cols:
-                        fig_changes = make_subplots(
-                            rows=1, cols=len(change_cols),
-                            subplot_titles=[f'{col.split("_")[0]} Change (%)' for col in change_cols],
-                            shared_yaxes=True
-                        )
-                        
-                        colors = ['blue', 'green', 'purple']
-                        for i, col in enumerate(change_cols):
-                            fig_changes.add_trace(
-                                go.Scatter(x=results_df[col], y=results_df['Depth'], 
-                                          mode='lines+markers', name=col.replace('_', ' ').title(), 
-                                          line=dict(color=colors[i])),
-                                row=1, col=i+1
-                            )
-                            fig_changes.update_xaxes(title_text=f"{col.split('_')[0]} Change (%)", row=1, col=i+1)
-                        
-                        fig_changes.update_yaxes(title_text="Depth", row=1, col=1)
-                        fig_changes.update_yaxes(autorange="reversed")
-                        
-                        fig_changes.update_layout(
-                            height=500,
-                            template="plotly_white",
-                            showlegend=False
-                        )
-                        
-                        st.plotly_chart(fig_changes, use_container_width=True)
                     
                     # Export results
                     st.subheader("Export Modeling Results")
